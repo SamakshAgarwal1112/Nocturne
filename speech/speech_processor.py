@@ -4,7 +4,7 @@ import os
 
 def recognize_speech():
     recognizer = sr.Recognizer()
-    mic = sr.Microphone()
+    mic = sr.Microphone(device_index=1)
 
     with mic as source:
         print("Listening...")

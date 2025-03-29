@@ -7,8 +7,8 @@ from gtts import gTTS
 
 model = YOLO("yolo11n.pt")
 
-recognizer = sr.Recognizer()
-mic = sr.Microphone()
+# recognizer = sr.Recognizer()
+# mic = sr.Microphone()
 
 def recognize_speech():
     with mic as source:
@@ -26,7 +26,7 @@ def speak_text(text):
     tts.save("alert.mp3")
     os.system("mpg321 alert.mp3")
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -40,12 +40,12 @@ while cap.isOpened():
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cls = int(box.cls[0].item())
 
-            if cls == 0:
-                speak_text("Driver, you seem drowsy! Are you okay?")
-                response = recognize_speech()
+            # if cls == 0:
+            #     speak_text("Driver, you seem drowsy! Are you okay?")
+            #     response = recognize_speech()
 
-                if response and "yes" not in response.lower():
-                    speak_text("Please take a break.")
+            #     if response and "yes" not in response.lower():
+            #         speak_text("Please take a break.")
 
     cv2.imshow("Nocturne - Drowsiness Detection", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
