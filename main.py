@@ -5,7 +5,7 @@ from ultralytics import YOLO
 import speech_recognition as sr
 from gtts import gTTS
 
-model = YOLO("yolo11n.pt")
+model = YOLO("yolov8n.pt")
 
 # recognizer = sr.Recognizer()
 # mic = sr.Microphone()
@@ -26,7 +26,7 @@ def speak_text(text):
     tts.save("alert.mp3")
     os.system("mpg321 alert.mp3")
 
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
     ret, frame = cap.read()
