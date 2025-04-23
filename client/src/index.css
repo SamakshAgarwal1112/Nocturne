@@ -1,0 +1,9 @@
+body {
+  background-color: #121212;
+  color: #fefefe;
+  font-family: 'Segoe UI', sans-serif;
+  user-select: none;
+}
+button:active {
+  transform: scale(0.97);
+}
