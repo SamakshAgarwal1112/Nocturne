@@ -1,21 +1,21 @@
-"""
-Audio alerts module for driver drowsiness detection system with continuous playback
-and Gemini API integration for voice analysis
-"""
-
 import time
 import threading
 import pygame
 import os
 import json
 import requests
+import numpy as np
+import sounddevice as sd
+import webrtcvad
+import noisereduce as nr
+from queue import Queue
 from gtts import gTTS
 import speech_recognition as sr
 
 class AudioAlerts:
     """
     Class to handle audio alerts for drowsiness detection with continuous playback,
-    voice response detection, and Gemini API integration
+    voice response detection, and Gemini API integration with acoustic echo cancellation
     """
     
     def __init__(self, normal_message="Hey, are you awake?", 
@@ -38,6 +38,8 @@ class AudioAlerts:
         self.volume = volume
         self.gemini_api_key = gemini_api_key
         self.gemini_api_url = gemini_api_url
+        self.last_system_audio_time = 0
+        self.is_playing_audio = False
         
         # Initialize pygame mixer
         pygame.mixer.init()
@@ -57,13 +59,37 @@ class AudioAlerts:
         # Current drowsiness level
         self.current_drowsiness_level = "AWAKE"
         
-        # Initialize voice recognition
+        # Setup for acoustic echo cancellation
+        self.sample_rate = 16000  # WebRTC VAD works best with 16kHz
+        try:
+            self.vad = webrtcvad.Vad(3)  # Aggressiveness level 3 (0-3)
+        except Exception as e:
+            print(f"Warning: Could not initialize WebRTC VAD: {e}")
+            self.vad = None
+        
+        # Buffer to store system audio for echo reference
+        self.audio_buffer = Queue()
+        
+        # Setup audio output monitoring
+        self.audio_output_thread = None
+        self.stop_audio_monitoring = False
+        
+        # Initialize voice recognition with better parameters
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone()
+        
+        # Setup audio monitoring for echo cancellation
+        self._setup_audio_monitoring()
         
         # Calibrate recognizer for ambient noise
         with self.microphone as source:
             self.recognizer.adjust_for_ambient_noise(source)
+        
+        # Enhanced recognition parameters
+        self.recognizer.energy_threshold = 1000  # Higher value for energy threshold
+        self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.pause_threshold = 0.8  # Shorter pause threshold
+        self.recognizer.phrase_threshold = 0.3  # Better for short responses
         
         # Thread for voice detection
         self.voice_detection_thread = None
@@ -74,6 +100,51 @@ class AudioAlerts:
         
         # Generate audio files if they don't exist
         self._generate_audio_files()
+    
+    def _setup_audio_monitoring(self):
+        """Setup audio monitoring for echo cancellation"""
+        try:
+            # List audio devices
+            devices = sd.query_devices()
+            
+            # Find default output device
+            output_device = None
+            for i, device in enumerate(devices):
+                if device['max_output_channels'] > 0 and sd.default.device[1] == i:
+                    output_device = i
+                    break
+            
+            if output_device is not None:
+                # Start monitoring thread
+                self.audio_output_thread = threading.Thread(
+                    target=self._monitor_audio_output, 
+                    args=(output_device,),
+                    daemon=True
+                )
+                self.audio_output_thread.start()
+                print("Audio output monitoring started")
+            else:
+                print("Couldn't find suitable output device for monitoring")
+        except Exception as e:
+            print(f"Error setting up audio monitoring: {e}")
+    
+    def _monitor_audio_output(self, device_id):
+        """Monitor audio output for echo cancellation reference"""
+        try:
+            def callback(outdata, frames, time, status):
+                if self.is_playing_audio and outdata.any():
+                    # Store a copy of played audio for echo reference
+                    self.audio_buffer.put(outdata.copy())
+            
+            # Start output stream
+            with sd.OutputStream(device=device_id, 
+                              channels=1, 
+                              callback=callback,
+                              samplerate=self.sample_rate):
+                while not self.stop_audio_monitoring:
+                    sd.sleep(100)
+        except Exception as e:
+            print(f"Error in audio monitoring: {e}")
     
     def _generate_audio_files(self):
         """Generate audio files for alerts using gTTS"""
@@ -109,6 +180,10 @@ class AudioAlerts:
         """Generate a temporary audio file with the given message"""
         audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "audio")
         temp_audio_path = os.path.join(audio_dir, "temp_response.mp3")
+        
+        # Flag that we're about to play audio
+        self.is_playing_audio = True
+        self.last_system_audio_time = time.time()
         
         tts = gTTS(text=message, lang='en')
         tts.save(temp_audio_path)
@@ -206,7 +281,7 @@ class AudioAlerts:
     
     def _is_system_audio_echo(self, text):
         """
-        Check if the recognized text is an echo of system messages
+        Enhanced echo detection that combines multiple techniques
         
         Args:
             text (str): Recognized text to check
@@ -216,30 +291,108 @@ class AudioAlerts:
         """
         text_lower = text.lower()
         
-        # Check for exact match or high similarity with any recent system messages
+        # Track when the last system message was played
+        current_time = time.time()
+        if current_time - self.last_system_audio_time < 2.0:
+            # If recognized text came too soon after system speech, it's likely echo
+            echo_probability = 0.8
+        else:
+            echo_probability = 0.0
+        
+        # Check for word similarity with recent system messages
         for message in self.recent_system_messages:
-            # Check for exact match
+            # Check for exact matches
             if message in text_lower:
                 return True
-                
-            # Check for similarity (if message is at least 60% of the recognized text)
+            
+            # Word-level similarity matching
             message_words = set(message.split())
             text_words = set(text_lower.split())
-            common_words = message_words.intersection(text_words)
             
-            if len(common_words) >= 0.6 * len(message_words) and len(message_words) > 3:
-                return True
-            
-            if(text_lower.split("mini")[1:]):
-                return False
-            else:
-                return True
+            if len(message_words) == 0:
+                continue
                 
-        return False
+            common_words = message_words.intersection(text_words)
+            similarity = len(common_words) / len(message_words) if len(message_words) > 0 else 0
+            
+            # Adjust probability based on similarity
+            if similarity > 0.5:
+                echo_probability += 0.3
+            
+            # Short texts need higher similarity thresholds
+            if len(message_words) < 3 and similarity < 0.8:
+                echo_probability -= 0.2
+        
+        # If detected any trigger words that weren't in system messages
+        driver_attention_words = ["yes", "okay", "i'm", "sure", "hey", "hi", "hello", "awake", "focused"]
+        if any(word in text_lower for word in driver_attention_words):
+            echo_probability -= 0.3
+        
+        # Final decision
+        return echo_probability > 0.5
     
     def _process_voice_with_gemini(self, audio):
-        """Process voice input with Gemini API"""
+        """Process voice input with Gemini API with echo cancellation"""
         try:
+            # Convert audio to numpy array for processing if possible
+            try:
+                audio_data = np.frombuffer(audio.frame_data, dtype=np.int16)
+                
+                # Apply echo cancellation if we have reference audio
+                if not self.audio_buffer.empty():
+                    # Collect reference audio samples
+                    reference_chunks = []
+                    while not self.audio_buffer.empty():
+                        reference_chunks.append(self.audio_buffer.get())
+                    
+                    if reference_chunks:
+                        # Combine chunks
+                        reference_audio = np.vstack(reference_chunks)
+                        
+                        # Perform echo cancellation
+                        try:
+                            processed_audio = nr.reduce_noise(
+                                y=audio_data, 
+                                sr=self.sample_rate,
+                                y_noise=reference_audio.flatten()
+                            )
+                            
+                            # Create new audio data
+                            processed_audio_bytes = processed_audio.astype(np.int16).tobytes()
+                            # Create new AudioData object
+                            audio = sr.AudioData(
+                                processed_audio_bytes, 
+                                self.sample_rate, 
+                                audio.sample_width
+                            )
+                        except Exception as e:
+                            print(f"Echo cancellation processing error: {e}")
+                
+                # Perform voice activity detection if available
+                if self.vad:
+                    frames = []
+                    for i in range(0, len(audio_data), 320):  # 20ms frames at 16kHz
+                        if i + 320 <= len(audio_data):
+                            frames.append(audio_data[i:i+320])
+                    
+                    # Only proceed if enough frames have voice activity
+                    voice_frames = 0
+                    for frame in frames:
+                        if len(frame) == 320:  # Valid frame size
+                            try:
+                                if self.vad.is_speech(frame.tobytes(), self.sample_rate):
+                                    voice_frames += 1
+                            except Exception as e:
+                                print(f"VAD error: {e}")
+                    
+                    voice_percentage = voice_frames / len(frames) if frames else 0
+                    
+                    if voice_percentage < 0.3:  # Less than 30% of frames contain speech
+                        print("No significant speech detected in audio")
+                        return False
+            except Exception as e:
+                print(f"Warning: Audio processing failed, falling back to basic recognition: {e}")
+            
             # Convert speech to text
             user_speech = self.recognizer.recognize_google(audio)
             print(f"Raw recognized text: {user_speech}")
@@ -286,11 +439,9 @@ class AudioAlerts:
             return False
     
     def _listen_for_response(self):
-        """Listen for voice response and process with Gemini API"""
-        print("Voice detection started - say something to assess alertness")
+        """Listen for voice response with echo cancellation"""
+        print("Voice detection started with echo cancellation")
         self.stop_voice_detection = False
-        self.recognizer.energy_threshold = 1000
-        self.recognizer.dynamic_energy_threshold = True
         
         while not self.stop_voice_detection:
             try:
@@ -303,19 +454,29 @@ class AudioAlerts:
                     if self.stop_voice_detection:
                         return
                 
-                # Add a small buffer after playback ends
-                time.sleep(0.5)
+                # Set flag when we're not playing audio
+                self.is_playing_audio = False
+                
+                # Add a buffer time after playback ends
+                time.sleep(0.8)  # Buffer time after audio ends
+                
+                # Clear any stale audio from buffer
+                while not self.audio_buffer.empty():
+                    self.audio_buffer.get()
+                
+                # Stop all channels to ensure they're not playing
                 self.normal_channel.stop()
                 self.extreme_channel.stop()
                 self.gemini_channel.stop()
                 self.no_face_channel.stop()
+                
                 with self.microphone as source:
                     print("Listening for driver response...")
                     # Adjust for ambient noise before each listening session
-                    self.recognizer.adjust_for_ambient_noise(source, duration=1.5)
-                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10.0)
+                    self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
+                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=6.0)
                     
-                # Process with Gemini instead of just stopping alerts
+                # Process with echo cancellation and Gemini
                 is_alert = self._process_voice_with_gemini(audio)
                 if is_alert:
                     self.system_alert_active = False
@@ -343,15 +504,17 @@ class AudioAlerts:
             self.voice_detection_thread.join(timeout=1.0)
     
     def play_normal_alert(self):
-        """Start playing normal alert in a loop"""
+        """Start playing normal alert"""
         if not self.normal_alert_active and not self.extreme_alert_active and not self.system_alert_active:
             self.normal_alert_active = True
             self.normal_channel.play(self.normal_alert_sound, loops=0)  # Play once, not looping
+            self.is_playing_audio = True
+            self.last_system_audio_time = time.time()
             # Start voice detection after alert (it'll wait for playback to finish)
             self.start_voice_detection()
     
     def play_extreme_alert(self):
-        """Start playing extreme alert in a loop"""
+        """Start playing extreme alert"""
         # Stop normal alert if playing
         if (not self.normal_channel.get_busy()):
             if self.normal_alert_active:
@@ -361,6 +524,8 @@ class AudioAlerts:
             if not self.extreme_alert_active and not self.system_alert_active:
                 self.extreme_alert_active = True
                 self.extreme_channel.play(self.extreme_alert_sound, loops=0)  # Play once, not looping
+                self.is_playing_audio = True
+                self.last_system_audio_time = time.time()
                 # Start voice detection after alert (it'll wait for playback to finish)
                 self.start_voice_detection()
         
@@ -380,6 +545,10 @@ class AudioAlerts:
         """Stop all alerts"""
         self.stop_normal_alert()
         self.stop_extreme_alert()
+        self.is_playing_audio = False
+        # Clear audio buffer
+        while not self.audio_buffer.empty():
+            self.audio_buffer.get()
     
     def update(self, drowsiness_level):
         """
@@ -399,8 +568,11 @@ class AudioAlerts:
             self.stop_all_alerts()
     
     def cleanup(self):
-        """Clean up pygame mixer and stop threads"""
+        """Clean up resources"""
         self.stop_voice_detection = True
+        self.stop_audio_monitoring = True
+        if self.audio_output_thread and self.audio_output_thread.is_alive():
+            self.audio_output_thread.join(1.0)
         self.stop_all_alerts()
         pygame.mixer.quit()
 
@@ -428,6 +600,8 @@ class AudioAlerts:
         # Play the alert once (not looping)
         no_face_sound = pygame.mixer.Sound(no_face_audio_path)
         no_face_sound.set_volume(self.volume)
+        self.is_playing_audio = True
+        self.last_system_audio_time = time.time()
         
         # Use channel for the no-face alert
         self.no_face_channel.play(no_face_sound)

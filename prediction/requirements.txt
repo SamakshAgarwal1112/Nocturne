@@ -9,3 +9,6 @@ pyaudio
 picamera2
 gtts
 SpeechRecognition
+webrtcvad
+sounddevice
+noisereduce
