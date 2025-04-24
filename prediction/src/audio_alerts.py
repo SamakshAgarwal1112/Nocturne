@@ -9,8 +9,8 @@ import sounddevice as sd
 import webrtcvad
 import noisereduce as nr
 from queue import Queue
-from gtts import gTTS
-import speech_recognition as sr
+import subprocess
+from vosk import Model, KaldiRecognizer
 
 class AudioAlerts:
     """
@@ -40,10 +40,13 @@ class AudioAlerts:
         self.gemini_api_url = gemini_api_url
         self.last_system_audio_time = 0
         self.is_playing_audio = False
+
+        # Initialize Vosk model for speech recognition
+        self.model = Model("/home/samaksh/Desktop/coding/Nocturne/prediction/models/vosk-model-small-en-us-0.15")
         
         # Initialize pygame mixer
         pygame.mixer.init()
-        pygame.mixer.set_num_channels(4)  # Added one more channel for Gemini responses
+        pygame.mixer.set_num_channels(4)
         
         # Set up channels
         self.normal_channel = pygame.mixer.Channel(0)
@@ -74,23 +77,6 @@ class AudioAlerts:
         self.audio_output_thread = None
         self.stop_audio_monitoring = False
         
-        # Initialize voice recognition with better parameters
-        self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
-        
-        # Setup audio monitoring for echo cancellation
-        self._setup_audio_monitoring()
-        
-        # Calibrate recognizer for ambient noise
-        with self.microphone as source:
-            self.recognizer.adjust_for_ambient_noise(source)
-        
-        # Enhanced recognition parameters
-        self.recognizer.energy_threshold = 1000  # Higher value for energy threshold
-        self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 0.8  # Shorter pause threshold
-        self.recognizer.phrase_threshold = 0.3  # Better for short responses
-        
         # Thread for voice detection
         self.voice_detection_thread = None
         self.stop_voice_detection = False
@@ -98,16 +84,13 @@ class AudioAlerts:
         # Store recent system messages for echo cancellation
         self.recent_system_messages = []
         
-        # Generate audio files if they don't exist
+        # Generate audio files using Piper binary
         self._generate_audio_files()
     
     def _setup_audio_monitoring(self):
         """Setup audio monitoring for echo cancellation"""
         try:
-            # List audio devices
             devices = sd.query_devices()
-            
-            # Find default output device
             output_device = None
             for i, device in enumerate(devices):
                 if device['max_output_channels'] > 0 and sd.default.device[1] == i:
@@ -115,7 +98,6 @@ class AudioAlerts:
                     break
             
             if output_device is not None:
-                # Start monitoring thread
                 self.audio_output_thread = threading.Thread(
                     target=self._monitor_audio_output, 
                     args=(output_device,),
@@ -133,10 +115,8 @@ class AudioAlerts:
         try:
             def callback(outdata, frames, time, status):
                 if self.is_playing_audio and outdata.any():
-                    # Store a copy of played audio for echo reference
                     self.audio_buffer.put(outdata.copy())
             
-            # Start output stream
             with sd.OutputStream(device=device_id, 
                               channels=1, 
                               callback=callback,
@@ -147,53 +127,76 @@ class AudioAlerts:
             print(f"Error in audio monitoring: {e}")
     
     def _generate_audio_files(self):
-        """Generate audio files for alerts using gTTS"""
-        # Create audio directory if it doesn't exist
+        """Generate audio files for alerts using Piper binary"""
         audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "audio")
         os.makedirs(audio_dir, exist_ok=True)
         
-        # Generate normal alert audio
-        normal_audio_path = os.path.join(audio_dir, "alert_normal.mp3")
-        if not os.path.exists(normal_audio_path) or True:  # Always regenerate for testing
-            tts = gTTS(text=self.normal_message, lang='en')
-            tts.save(normal_audio_path)
+        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper"
+        model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
         
-        # Generate extreme alert audio
-        extreme_audio_path = os.path.join(audio_dir, "alert_extreme.mp3")
-        if not os.path.exists(extreme_audio_path) or True:  # Always regenerate for testing
-            tts = gTTS(text=self.extreme_message, lang='en')
-            tts.save(extreme_audio_path)
+        # Verify Piper binary and model exist
+        if not os.path.isfile(piper_binary):
+            raise FileNotFoundError(f"Piper binary not found at {piper_binary}")
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Piper model not found at {model_path}")
         
-        # Load audio files
-        self.normal_alert_sound = pygame.mixer.Sound(normal_audio_path)
-        self.extreme_alert_sound = pygame.mixer.Sound(extreme_audio_path)
-        
-        # Set volume
-        self.normal_alert_sound.set_volume(self.volume)
-        self.extreme_alert_sound.set_volume(self.volume)
-        
-        # Add system messages to the recent messages list for echo cancellation
-        self.recent_system_messages.append(self.normal_message.lower())
-        self.recent_system_messages.append(self.extreme_message.lower())
+        for name, message in [("normal", self.normal_message), ("extreme", self.extreme_message)]:
+            output_file = os.path.join(audio_dir, f"alert_{name}.wav")
+            command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {output_file}'
+            try:
+                result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+                print(f"Generated {output_file} successfully")
+            except subprocess.SubprocessError as e:
+                error_msg = f"Failed to generate audio for {name}: {e}\nStderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'}"
+                print(error_msg)
+                raise RuntimeError(error_msg)
+            
+            # Verify the output file exists
+            if not os.path.isfile(output_file):
+                raise FileNotFoundError(f"Audio file {output_file} was not created by Piper")
+            
+            # Load the sound with pygame
+            try:
+                sound = pygame.mixer.Sound(output_file)
+                sound.set_volume(self.volume)
+                setattr(self, f"{name}_alert_sound", sound)
+                print(f"Loaded {name}_alert_sound successfully")
+            except pygame.error as e:
+                raise RuntimeError(f"Failed to load {output_file} with pygame: {e}")
+            
+            self.recent_system_messages.append(message.lower())
     
     def _generate_temp_audio(self, message):
-        """Generate a temporary audio file with the given message"""
+        """Generate a temporary audio file with the given message using Piper binary"""
         audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "audio")
-        temp_audio_path = os.path.join(audio_dir, "temp_response.mp3")
+        temp_audio_path = os.path.join(audio_dir, "temp_response.wav")
         
-        # Flag that we're about to play audio
         self.is_playing_audio = True
         self.last_system_audio_time = time.time()
         
-        tts = gTTS(text=message, lang='en')
-        tts.save(temp_audio_path)
+        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper"
+        model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
+        command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {temp_audio_path}'
+        try:
+            subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+            print(f"Generated temporary audio: {temp_audio_path}")
+        except subprocess.SubprocessError as e:
+            print(f"Error generating temp audio: {e}\nStderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'}")
+            return None
         
-        temp_sound = pygame.mixer.Sound(temp_audio_path)
-        temp_sound.set_volume(self.volume)
+        # Verify the output file exists
+        if not os.path.isfile(temp_audio_path):
+            print(f"Error: Temporary audio file {temp_audio_path} was not created")
+            return None
         
-        # Add this message to recent system messages for echo cancellation
+        try:
+            temp_sound = pygame.mixer.Sound(temp_audio_path)
+            temp_sound.set_volume(self.volume)
+        except pygame.error as e:
+            print(f"Error loading temporary audio with pygame: {e}")
+            return None
+        
         self.recent_system_messages.append(message.lower())
-        # Keep only last 5 messages to avoid memory bloat
         if len(self.recent_system_messages) > 5:
             self.recent_system_messages.pop(0)
             
@@ -225,6 +228,7 @@ class AudioAlerts:
         1. "convinced": a boolean (true/false) indicating if you're convinced the driver is alert
         2. "message": if not convinced, include a brief message explaining what the driver should do
         In case of not convinced, make sure to generate a human sounding response message to create familiarity with the human driver. Keep the message short and clear.
+        Keep the messages interesting as if a human is interacting with the user. Do not give random boring tasks. Just plain but interesting conversation that might prompt the user to answer back. Sometimes, could go a little wild.
         
         Example response if convinced:
         {{"convinced": true}}
@@ -291,21 +295,16 @@ class AudioAlerts:
         """
         text_lower = text.lower()
         
-        # Track when the last system message was played
         current_time = time.time()
         if current_time - self.last_system_audio_time < 2.0:
-            # If recognized text came too soon after system speech, it's likely echo
             echo_probability = 0.8
         else:
             echo_probability = 0.0
         
-        # Check for word similarity with recent system messages
         for message in self.recent_system_messages:
-            # Check for exact matches
             if message in text_lower:
                 return True
             
-            # Word-level similarity matching
             message_words = set(message.split())
             text_words = set(text_lower.split())
             
@@ -315,89 +314,67 @@ class AudioAlerts:
             common_words = message_words.intersection(text_words)
             similarity = len(common_words) / len(message_words) if len(message_words) > 0 else 0
             
-            # Adjust probability based on similarity
             if similarity > 0.5:
                 echo_probability += 0.3
             
-            # Short texts need higher similarity thresholds
             if len(message_words) < 3 and similarity < 0.8:
                 echo_probability -= 0.2
         
-        # If detected any trigger words that weren't in system messages
         driver_attention_words = ["yes", "okay", "i'm", "sure", "hey", "hi", "hello", "awake", "focused"]
         if any(word in text_lower for word in driver_attention_words):
             echo_probability -= 0.3
         
-        # Final decision
         return echo_probability > 0.5
     
-    def _process_voice_with_gemini(self, audio):
+    def _process_voice_with_gemini(self, audio_data):
         """Process voice input with Gemini API with echo cancellation"""
         try:
-            # Convert audio to numpy array for processing if possible
-            try:
-                audio_data = np.frombuffer(audio.frame_data, dtype=np.int16)
+            # Apply echo cancellation if reference audio is available
+            if not self.audio_buffer.empty():
+                reference_chunks = []
+                while not self.audio_buffer.empty():
+                    reference_chunks.append(self.audio_buffer.get())
                 
-                # Apply echo cancellation if we have reference audio
-                if not self.audio_buffer.empty():
-                    # Collect reference audio samples
-                    reference_chunks = []
-                    while not self.audio_buffer.empty():
-                        reference_chunks.append(self.audio_buffer.get())
-                    
-                    if reference_chunks:
-                        # Combine chunks
-                        reference_audio = np.vstack(reference_chunks)
-                        
-                        # Perform echo cancellation
-                        try:
-                            processed_audio = nr.reduce_noise(
-                                y=audio_data, 
-                                sr=self.sample_rate,
-                                y_noise=reference_audio.flatten()
-                            )
-                            
-                            # Create new audio data
-                            processed_audio_bytes = processed_audio.astype(np.int16).tobytes()
-                            # Create new AudioData object
-                            audio = sr.AudioData(
-                                processed_audio_bytes, 
-                                self.sample_rate, 
-                                audio.sample_width
-                            )
-                        except Exception as e:
-                            print(f"Echo cancellation processing error: {e}")
-                
-                # Perform voice activity detection if available
-                if self.vad:
-                    frames = []
-                    for i in range(0, len(audio_data), 320):  # 20ms frames at 16kHz
-                        if i + 320 <= len(audio_data):
-                            frames.append(audio_data[i:i+320])
-                    
-                    # Only proceed if enough frames have voice activity
-                    voice_frames = 0
-                    for frame in frames:
-                        if len(frame) == 320:  # Valid frame size
-                            try:
-                                if self.vad.is_speech(frame.tobytes(), self.sample_rate):
-                                    voice_frames += 1
-                            except Exception as e:
-                                print(f"VAD error: {e}")
-                    
-                    voice_percentage = voice_frames / len(frames) if frames else 0
-                    
-                    if voice_percentage < 0.3:  # Less than 30% of frames contain speech
-                        print("No significant speech detected in audio")
-                        return False
-            except Exception as e:
-                print(f"Warning: Audio processing failed, falling back to basic recognition: {e}")
+                if reference_chunks:
+                    reference_audio = np.vstack(reference_chunks)
+                    try:
+                        processed_audio = nr.reduce_noise(
+                            y=audio_data, 
+                            sr=self.sample_rate,
+                            y_noise=reference_audio.flatten()
+                        )
+                        audio_data = processed_audio
+                    except Exception as e:
+                        print(f"Echo cancellation processing error: {e}")
             
-            # Convert speech to text
-            user_speech = self.recognizer.recognize_google(audio)
+            # Perform voice activity detection if available
+            if self.vad:
+                frames = []
+                for i in range(0, len(audio_data), 320):
+                    if i + 320 <= len(audio_data):
+                        frames.append(audio_data[i:i+320])
+                
+                voice_frames = 0
+                for frame in frames:
+                    if len(frame) == 320:
+                        try:
+                            if self.vad.is_speech(frame.astype(np.int16).tobytes(), self.sample_rate):
+                                voice_frames += 1
+                        except Exception as e:
+                            print(f"VAD error: {e}")
+                
+                voice_percentage = voice_frames / len(frames) if frames else 0
+                if voice_percentage < 0.3:
+                    print("No significant speech detected in audio")
+                    return False
+            
+            # Process audio with Vosk
+            recognizer = KaldiRecognizer(self.model, self.sample_rate)
+            recognizer.AcceptWaveform(audio_data.astype(np.int16).tobytes())
+            result = recognizer.Result()
+            user_speech = json.loads(result).get("text", "")
             print(f"Raw recognized text: {user_speech}")
             
-            # Check if this is just the system's own audio being picked up
             if self._is_system_audio_echo(user_speech):
                 print("Detected system's own audio output, ignoring and continuing to listen")
                 return False
@@ -415,7 +392,8 @@ class AudioAlerts:
                 
                 # Play confirmation message
                 confirm_sound = self._generate_temp_audio("You seem alert now. Drive safely.")
-                self.gemini_channel.play(confirm_sound)
+                if confirm_sound:
+                    self.gemini_channel.play(confirm_sound)
                 return True
             else:
                 # Play custom message from Gemini
@@ -423,17 +401,11 @@ class AudioAlerts:
                 print(f"Gemini response: {message}")
                 
                 response_sound = self._generate_temp_audio(message)
-                self.stop_all_alerts()
-                self.gemini_channel.play(response_sound)
-                # Keep alerts active
+                if response_sound:
+                    self.stop_all_alerts()
+                    self.gemini_channel.play(response_sound)
                 return False
                 
-        except sr.UnknownValueError:
-            print("Could not understand audio")
-            return False
-        except sr.RequestError as e:
-            print(f"Could not request results: {e}")
-            return False
         except Exception as e:
             print(f"Error processing voice with Gemini: {e}")
             return False
@@ -454,37 +426,35 @@ class AudioAlerts:
                     if self.stop_voice_detection:
                         return
                 
-                # Set flag when we're not playing audio
                 self.is_playing_audio = False
+                time.sleep(0.8)
                 
-                # Add a buffer time after playback ends
-                time.sleep(0.8)  # Buffer time after audio ends
-                
-                # Clear any stale audio from buffer
+                # Clear audio buffer
                 while not self.audio_buffer.empty():
                     self.audio_buffer.get()
                 
-                # Stop all channels to ensure they're not playing
+                # Stop all channels
                 self.normal_channel.stop()
                 self.extreme_channel.stop()
                 self.gemini_channel.stop()
                 self.no_face_channel.stop()
                 
-                with self.microphone as source:
-                    print("Listening for driver response...")
-                    # Adjust for ambient noise before each listening session
-                    self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
-                    audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=6.0)
-                    
-                # Process with echo cancellation and Gemini
-                is_alert = self._process_voice_with_gemini(audio)
+                # Capture audio using sounddevice
+                print("Listening for driver response...")
+                audio_data = sd.rec(
+                    int(6.0 * self.sample_rate),  # Record for max 6 seconds
+                    samplerate=self.sample_rate,
+                    channels=1,
+                    dtype='int16'
+                )
+                sd.wait()  # Wait until recording is finished
+                
+                # Process the captured audio
+                is_alert = self._process_voice_with_gemini(audio_data.flatten())
                 if is_alert:
                     self.system_alert_active = False
                     break
                     
-            except sr.WaitTimeoutError:
-                # Just timeout, continue listening
-                print("No response detected, continuing to listen...")
             except Exception as e:
                 print(f"Error in voice detection: {e}")
             
@@ -493,7 +463,6 @@ class AudioAlerts:
     def start_voice_detection(self):
         """Start voice detection in a separate thread"""
         if (self.voice_detection_thread is None or not self.voice_detection_thread.is_alive()) and not self.system_alert_active:
-            # Create a new thread for voice detection
             self.voice_detection_thread = threading.Thread(target=self._listen_for_response, daemon=True)
             self.voice_detection_thread.start()
     
@@ -506,27 +475,30 @@ class AudioAlerts:
     def play_normal_alert(self):
         """Start playing normal alert"""
         if not self.normal_alert_active and not self.extreme_alert_active and not self.system_alert_active:
+            if not hasattr(self, 'normal_alert_sound'):
+                print("Error: normal_alert_sound not initialized. Cannot play normal alert.")
+                return
             self.normal_alert_active = True
-            self.normal_channel.play(self.normal_alert_sound, loops=0)  # Play once, not looping
+            self.normal_channel.play(self.normal_alert_sound, loops=0)
             self.is_playing_audio = True
             self.last_system_audio_time = time.time()
-            # Start voice detection after alert (it'll wait for playback to finish)
             self.start_voice_detection()
     
     def play_extreme_alert(self):
         """Start playing extreme alert"""
-        # Stop normal alert if playing
-        if (not self.normal_channel.get_busy()):
+        if not self.normal_channel.get_busy():
             if self.normal_alert_active:
                 self.normal_channel.stop()
                 self.normal_alert_active = False
             
             if not self.extreme_alert_active and not self.system_alert_active:
+                if not hasattr(self, 'extreme_alert_sound'):
+                    print("Error: extreme_alert_sound not initialized. Cannot play extreme alert.")
+                    return
                 self.extreme_alert_active = True
-                self.extreme_channel.play(self.extreme_alert_sound, loops=0)  # Play once, not looping
+                self.extreme_channel.play(self.extreme_alert_sound, loops=0)
                 self.is_playing_audio = True
                 self.last_system_audio_time = time.time()
-                # Start voice detection after alert (it'll wait for playback to finish)
                 self.start_voice_detection()
         
     def stop_normal_alert(self):
@@ -546,7 +518,6 @@ class AudioAlerts:
         self.stop_normal_alert()
         self.stop_extreme_alert()
         self.is_playing_audio = False
-        # Clear audio buffer
         while not self.audio_buffer.empty():
             self.audio_buffer.get()
     
@@ -557,14 +528,13 @@ class AudioAlerts:
         Args:
             drowsiness_level (str): Current drowsiness level ("AWAKE", "NORMAL", or "EXTREME")
         """
-        # Store current drowsiness level for use with Gemini API
         self.current_drowsiness_level = drowsiness_level
         
         if drowsiness_level == "EXTREME":
             self.play_extreme_alert()
         elif drowsiness_level == "NORMAL":
             self.play_normal_alert()
-        else:  # AWAKE
+        else:
             self.stop_all_alerts()
     
     def cleanup(self):
@@ -583,25 +553,37 @@ class AudioAlerts:
         Args:
             message (str): Message to play when no face is detected
         """
-        # Create audio directory if it doesn't exist
         audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "audio")
         os.makedirs(audio_dir, exist_ok=True)
         
-        # Generate no face alert audio
-        no_face_audio_path = os.path.join(audio_dir, "alert_no_face.mp3")
-        tts = gTTS(text=message, lang='en')
-        tts.save(no_face_audio_path)
+        no_face_audio_path = os.path.join(audio_dir, "alert_no_face.wav")
+        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper"
+        model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
+        command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {no_face_audio_path}'
+        try:
+            subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+            print(f"Generated no face alert audio: {no_face_audio_path}")
+        except subprocess.SubprocessError as e:
+            print(f"Error generating no face alert audio: {e}\nStderr: {e.stderr if hasattr(e, 'stderr') else 'N/A'}")
+            return
         
-        # Add to recent messages for echo cancellation
+        # Verify the output file exists
+        if not os.path.isfile(no_face_audio_path):
+            print(f"Error: No face alert audio file {no_face_audio_path} was not created")
+            return
+        
+        try:
+            no_face_sound = pygame.mixer.Sound(no_face_audio_path)
+            no_face_sound.set_volume(self.volume)
+        except pygame.error as e:
+            print(f"Error loading no face alert audio with pygame: {e}")
+            return
+        
         self.recent_system_messages.append(message.lower())
         if len(self.recent_system_messages) > 5:
             self.recent_system_messages.pop(0)
         
-        # Play the alert once (not looping)
-        no_face_sound = pygame.mixer.Sound(no_face_audio_path)
-        no_face_sound.set_volume(self.volume)
         self.is_playing_audio = True
         self.last_system_audio_time = time.time()
         
-        # Use channel for the no-face alert
         self.no_face_channel.play(no_face_sound)
