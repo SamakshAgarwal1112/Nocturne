@@ -36,3 +36,6 @@ face_detection:
 gemini:
   api_key: "AIzaSyBV6KJlTxlda-BrpqUwl1Hm-PNNh4r7KKU"  # Replace with your actual API key
   api_url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+status_file_path:
+  path: "/tmp/drowsiness_status.txt"

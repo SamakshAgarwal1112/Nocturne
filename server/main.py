@@ -1,10 +1,57 @@
 from fastapi import FastAPI, Response
 from fastapi.responses import StreamingResponse
 import cv2
+import os
 import subprocess
+import time
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 cap = None
+detection_process = None
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/drowsiness/start")
+def start_drowsiness():
+    global detection_process
+    if detection_process is None:
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'prediction/src/main.py'))
+        python_path = subprocess.check_output(['pyenv', 'prefix', 'edp']).decode('utf-8').strip()
+        python_path = os.path.join(python_path, 'bin', 'python')
+        detection_process = subprocess.Popen([python_path, script_path, "--config", os.path.join(os.path.dirname(script_path), '..', 'config/config.yaml')])
+
+    return {"status": "started"}
+
+@app.post("/drowsiness/stop")
+def stop_drowsiness():
+    global detection_process
+    if detection_process:
+        detection_process.terminate()
+        detection_process = None
+    return {"status": "stopped"}
+
+@app.get("/drowsiness/live_status")
+def live_status():
+    def event_stream():
+        last_status = ""
+        while True:
+            try:
+                with open("/tmp/drowsiness_status.txt", "r") as f:
+                    current_status = f.read().strip()
+                if current_status != last_status:
+                    last_status = current_status
+                    yield f"data: {current_status}\n\n"
+            except:
+                yield "data: unknown\n\n"
+            time.sleep(1)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 @app.get("/camera/start")
 def start_camera():
@@ -46,8 +93,3 @@ def volume_control(direction: str):
 def shutdown():
     subprocess.run(["sudo", "shutdown", "now"])
     return {"status": "shutting down"}
-
-@app.post("/system/reboot")
-def reboot():
-    subprocess.run(["sudo", "reboot"])
-    return {"status": "rebooting"}

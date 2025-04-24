@@ -105,6 +105,7 @@ def main():
     face_detection_start_time = time.time()
     last_no_face_alert_time = time.time()
     no_face_alert_interval = config['face_detection']['alert_interval']  # seconds between no-face alerts
+    status_file_path = config['status_file_path']['path']
     
     # Main loop
     while True:
@@ -163,6 +164,9 @@ def main():
                     audio_alerts.play_no_face_alert(config['face_detection']['message'])
                     last_no_face_alert_time = current_time
         
+        with open(status_file_path, "w") as f:
+            f.write(current_drowsiness_level)
+
         # Update audio alerts based on current drowsiness level
         audio_alerts.update(current_drowsiness_level)
         
