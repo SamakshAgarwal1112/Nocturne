@@ -12,3 +12,5 @@ SpeechRecognition
 webrtcvad
 sounddevice
 noisereduce
+vosk
+llama-cpp-python

@@ -131,7 +131,7 @@ class AudioAlerts:
         audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "audio")
         os.makedirs(audio_dir, exist_ok=True)
         
-        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper"
+        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper/piper"
         model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
         
         # Verify Piper binary and model exist
@@ -174,7 +174,7 @@ class AudioAlerts:
         self.is_playing_audio = True
         self.last_system_audio_time = time.time()
         
-        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper"
+        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper/piper"
         model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
         command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {temp_audio_path}'
         try:
@@ -557,7 +557,7 @@ class AudioAlerts:
         os.makedirs(audio_dir, exist_ok=True)
         
         no_face_audio_path = os.path.join(audio_dir, "alert_no_face.wav")
-        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper"
+        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper/piper"
         model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
         command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {no_face_audio_path}'
         try:
