@@ -37,5 +37,12 @@ gemini:
   api_key: "AIzaSyBV6KJlTxlda-BrpqUwl1Hm-PNNh4r7KKU"  # Replace with your actual API key
   api_url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-status_file_path:
-  path: "/tmp/drowsiness_status.txt"
+file_path:
+  status_file: "/tmp/drowsiness_status.txt"
+  relevant_topics_file: "/tmp/relevant_driver_topics.txt"
+
+models:
+  piper_model_path: "models/piper/model_voice.onnx"
+  vosk_model_path: "models/vosk-model-small-en-us-0.15"
+  distilbert_model_path: "models/distilbert"
+  tinyllama_model_path: "models/tinyllama"

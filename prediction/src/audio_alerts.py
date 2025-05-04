@@ -11,6 +11,7 @@ import noisereduce as nr
 from queue import Queue
 import subprocess
 from vosk import Model, KaldiRecognizer
+import random
 
 class AudioAlerts:
     """
@@ -22,7 +23,11 @@ class AudioAlerts:
                  extreme_message="Alert! Wake up now!", 
                  volume=0.8,
                  gemini_api_key=None,
-                 gemini_api_url="https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"):
+                 gemini_api_url="https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+                 relevant_topics_file='/tmp/relevant_driver_topics.txt',
+                 piper_binary="models/piper/piper/piper",
+                 piper_model="models/piper/model_voice.onnx",
+                 vosk_model="models/vosk-model-small-en-us-0.15"):
         """
         Initialize audio alerts
         
@@ -38,6 +43,10 @@ class AudioAlerts:
         self.volume = volume
         self.gemini_api_key = gemini_api_key
         self.gemini_api_url = gemini_api_url
+        self.relevant_topics_file = relevant_topics_file
+        self.piper_binary = os.path.expanduser(piper_binary)
+        self.piper_model = os.path.expanduser(piper_model)
+        self.vosk_model = os.path.expanduser(vosk_model)
         self.last_system_audio_time = 0
         self.is_playing_audio = False
 
@@ -83,6 +92,9 @@ class AudioAlerts:
         
         # Store recent system messages for echo cancellation
         self.recent_system_messages = []
+        
+        # Conversation history for context
+        self.conversation_history = []
         
         # Generate audio files using Piper binary
         self._generate_audio_files()
@@ -131,18 +143,15 @@ class AudioAlerts:
         audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "audio")
         os.makedirs(audio_dir, exist_ok=True)
         
-        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper/piper"
-        model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
-        
         # Verify Piper binary and model exist
-        if not os.path.isfile(piper_binary):
-            raise FileNotFoundError(f"Piper binary not found at {piper_binary}")
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"Piper model not found at {model_path}")
+        if not os.path.isfile(self.piper_binary):
+            raise FileNotFoundError(f"Piper binary not found at {self.piper_binary}")
+        if not os.path.isfile(self.piper_model):
+            raise FileNotFoundError(f"Piper model not found at {self.piper_model}")
         
         for name, message in [("normal", self.normal_message), ("extreme", self.extreme_message)]:
             output_file = os.path.join(audio_dir, f"alert_{name}.wav")
-            command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {output_file}'
+            command = f'echo "{message}" | {self.piper_binary} --model {self.piper_model} --output_file {output_file}'
             try:
                 result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
                 print(f"Generated {output_file} successfully")
@@ -174,9 +183,7 @@ class AudioAlerts:
         self.is_playing_audio = True
         self.last_system_audio_time = time.time()
         
-        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper/piper"
-        model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
-        command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {temp_audio_path}'
+        command = f'echo "{message}" | {self.piper_binary} --model {self.piper_model} --output_file {temp_audio_path}'
         try:
             subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
             print(f"Generated temporary audio: {temp_audio_path}")
@@ -202,9 +209,52 @@ class AudioAlerts:
             
         return temp_sound
     
+    def _store_topic(self, topic):
+        """
+        Store a detected topic in the topics file
+        
+        Args:
+            topic (str): Topic to store
+        """
+        try:
+            # Read existing topics
+            existing_topics = []
+            if os.path.exists(self.relevant_topics_file):
+                with open(self.relevant_topics_file, 'r') as f:
+                    existing_topics = [line.strip() for line in f if line.strip()]
+            
+            # Add new topic if not already present
+            if topic and topic not in existing_topics:
+                existing_topics.append(topic)
+            
+            # Write updated topics to file
+            with open(self.relevant_topics_file, 'w') as f:
+                for t in existing_topics:
+                    f.write(f"{t}\n")
+            print(f"Updated topics in {self.relevant_topics_file}: {existing_topics}")
+        except Exception as e:
+            print(f"Error writing to topics file: {e}")
+    
+    def _get_random_topic(self):
+        """
+        Get a random topic from the topics file if it exists and is not empty
+        
+        Returns:
+            str: Random topic or None if file is empty or doesn't exist
+        """
+        try:
+            if os.path.exists(self.relevant_topics_file):
+                with open(self.relevant_topics_file, 'r') as f:
+                    topics = [line.strip() for line in f if line.strip()]
+                if topics:
+                    return random.choice(topics)
+        except Exception as e:
+            print(f"Error reading topics file: {e}")
+        return None
+    
     def _send_to_gemini_api(self, user_speech, drowsiness_level):
         """
-        Send user speech and drowsiness level to Gemini API
+        Send user speech and drowsiness level to Gemini API with conversation context
         
         Args:
             user_speech (str): User's speech transcript
@@ -215,27 +265,55 @@ class AudioAlerts:
         """
         if not self.gemini_api_key:
             print("Warning: Gemini API key not provided. Skipping API call.")
-            return {"convinced": False, "message": "API key not provided. Please set up the Gemini API key."}
-            
-        prompt = f"""
-        Analyze the following driver response and drowsiness status:
+            return {"convinced": False, "message": "API key not provided. Please set up the Gemini API key.", "topic": ""}
         
-        Driver's current drowsiness level: {drowsiness_level}
-        Driver's voice response: "{user_speech}"
+        # Add current interaction to conversation history
+        if user_speech:
+            self.conversation_history.append({
+                "role": "user",
+                "content": user_speech
+            })
         
-        Determine if this response convincingly indicates the driver is alert and no longer drowsy.
-        Output only a JSON object with two fields:
-        1. "convinced": a boolean (true/false) indicating if you're convinced the driver is alert
-        2. "message": if not convinced, include a brief message explaining what the driver should do
-        In case of not convinced, make sure to generate a human sounding response message to create familiarity with the human driver. Keep the message short and clear.
-        Keep the messages interesting as if a human is interacting with the user. Do not give random boring tasks. Just plain but interesting conversation that might prompt the user to answer back. Sometimes, could go a little wild.
+        # Limit conversation history to last 10 exchanges
+        if len(self.conversation_history) > 10:
+            self.conversation_history = self.conversation_history[-10:]
         
-        Example response if convinced:
-        {{"convinced": true}}
+        # Prepare conversation context
+        conversation_context = "\n".join(
+            [f"{msg['role'].capitalize()}: {msg['content']}" for msg in self.conversation_history]
+        )
         
-        Example response if not convinced:
-        {{"convinced": false, "message": "Hey Bud, you don't seem very focused. Can you count from 20 to 30?"}}
+        # Get a random topic if available
+        selected_topic = self._get_random_topic()
+        
+        # Base prompt
+        base_prompt = f"""
+        Drowsiness level: {drowsiness_level}
+        Conversation:
+        {conversation_context}
+        Driver response: "{user_speech}"
+        
+        Assess if the driver is alert. If not, respond with a short (1-2 lines), engaging message to keep them talking, using friendly, natural, and occasionally playful tones. Make sense of fragmented responses. Identify a 1-2 word topic of interest if the driver seems enthusiastic, else return empty string.
+        
+        Return JSON with:
+        - "convinced": boolean (true/false)
+        - "message": engaging response if not convinced
+        - "topic": 1-2 word topic or ""
+        
+        Examples:
+        {{"convinced": true, "message": "", "topic": ""}}
+        {{"convinced": false, "message": "Bit sleepy? What's your wildest road trip?", "topic": "road trips"}}
+        {{"convinced": false, "message": "You sound tired! Done anything fun lately?", "topic": ""}}
         """
+        
+        # Prompt with topic
+        topic_prompt = base_prompt
+        if selected_topic:
+            topic_prompt = f"""
+            {base_prompt}
+            Driver likes: {selected_topic}. Steer conversation toward this.
+            Example: {{"convinced": false, "message": "Sleepy? What's your favorite {selected_topic} moment?", "topic": "{selected_topic}"}}
+            """
         
         headers = {
             "Content-Type": "application/json"
@@ -244,12 +322,12 @@ class AudioAlerts:
         data = {
             "contents": [{
                 "parts": [{
-                    "text": prompt
+                    "text": topic_prompt if selected_topic else base_prompt
                 }]
             }],
             "generationConfig": {
-                "temperature": 0.2,
-                "topP": 0.8,
+                "temperature": 0.4,
+                "topP": 0.9,
                 "topK": 40
             }
         }
@@ -260,28 +338,37 @@ class AudioAlerts:
             response = requests.post(url, headers=headers, json=data)
             response.raise_for_status()
             
-            # Parse the response
+            # Parse response
             resp_json = response.json()
             text_response = resp_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
             
-            # Extract the JSON part from the text response
+            # Extract JSON
             try:
-                # Find JSON in the response (it might be mixed with other text)
                 start_idx = text_response.find('{')
                 end_idx = text_response.rfind('}') + 1
                 
                 if start_idx >= 0 and end_idx > 0:
                     json_str = text_response[start_idx:end_idx]
                     result = json.loads(json_str)
+                    # Store detected topic
+                    topic = result.get("topic", "")
+                    if topic:
+                        self._store_topic(topic)
+                    # Add system response to history
+                    if not result.get("convinced", False):
+                        self.conversation_history.append({
+                            "role": "system",
+                            "content": result.get("message", "")
+                        })
                     return result
                 else:
-                    return {"convinced": False, "message": "Could not parse Gemini API response."}
+                    return {"convinced": False, "message": "Could not parse Gemini API response.", "topic": ""}
             except json.JSONDecodeError:
-                return {"convinced": False, "message": "Could not parse Gemini API response."}
+                return {"convinced": False, "message": "Could not parse Gemini API response.", "topic": ""}
                 
         except requests.exceptions.RequestException as e:
             print(f"Error calling Gemini API: {e}")
-            return {"convinced": False, "message": "Error communicating with Gemini API."}
+            return {"convinced": False, "message": "Error communicating with Gemini API.", "topic": ""}
     
     def _is_system_audio_echo(self, text):
         """
@@ -389,7 +476,7 @@ class AudioAlerts:
             if gemini_response.get("convinced", False):
                 print("System is convinced the driver is alert.")
                 self.stop_all_alerts()
-                
+                self.conversation_history = []  # Reset conversation history
                 # Play confirmation message
                 confirm_sound = self._generate_temp_audio("You seem alert now. Drive safely.")
                 if confirm_sound:
@@ -536,6 +623,7 @@ class AudioAlerts:
             self.play_normal_alert()
         else:
             self.stop_all_alerts()
+            self.conversation_history = []  # Reset conversation history when driver is AWAKE
     
     def cleanup(self):
         """Clean up resources"""
@@ -557,9 +645,7 @@ class AudioAlerts:
         os.makedirs(audio_dir, exist_ok=True)
         
         no_face_audio_path = os.path.join(audio_dir, "alert_no_face.wav")
-        piper_binary = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/piper/piper"
-        model_path = "/home/samaksh/Desktop/coding/Nocturne/prediction/models/piper/model_voice.onnx"
-        command = f'echo "{message}" | {piper_binary} --model {model_path} --output_file {no_face_audio_path}'
+        command = f'echo "{message}" | {self.piper_binary} --model {self.piper_model} --output_file {no_face_audio_path}'
         try:
             subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
             print(f"Generated no face alert audio: {no_face_audio_path}")

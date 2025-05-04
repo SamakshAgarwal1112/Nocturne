@@ -81,7 +81,8 @@ def main():
         volume=config['alerts']['volume'],
         gemini_api_key=gemini_api_key,
         gemini_api_url=config.get('gemini', {}).get('api_url', 
-                                "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent")
+                                "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"),
+        relevant_topics_file=config['file_path']['relevant_topics_file']
     )
     
     # Initialize camera
@@ -105,7 +106,7 @@ def main():
     face_detection_start_time = time.time()
     last_no_face_alert_time = time.time()
     no_face_alert_interval = config['face_detection']['alert_interval']  # seconds between no-face alerts
-    status_file_path = config['status_file_path']['path']
+    status_file_path = config['file_path']['status_file']
     
     # Main loop
     while True:
