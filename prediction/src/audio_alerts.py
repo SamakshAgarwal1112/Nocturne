@@ -44,14 +44,14 @@ class AudioAlerts:
         self.gemini_api_key = gemini_api_key
         self.gemini_api_url = gemini_api_url
         self.relevant_topics_file = relevant_topics_file
-        self.piper_binary = os.path.expanduser(piper_binary)
-        self.piper_model = os.path.expanduser(piper_model)
-        self.vosk_model = os.path.expanduser(vosk_model)
+        self.piper_binary = os.path.join(os.path.dirname(os.path.abspath(os.getcwd())), "prediction", piper_binary)
+        self.piper_model = os.path.join(os.path.dirname(os.path.abspath(os.getcwd())), "prediction", piper_model)
+        self.vosk_model = os.path.join(os.path.dirname(os.path.abspath(os.getcwd())), "prediction", vosk_model)
         self.last_system_audio_time = 0
         self.is_playing_audio = False
 
         # Initialize Vosk model for speech recognition
-        self.model = Model("/home/samaksh/Desktop/coding/Nocturne/prediction/models/vosk-model-small-en-us-0.15")
+        self.model = Model(self.vosk_model)
         
         # Initialize pygame mixer
         pygame.mixer.init()

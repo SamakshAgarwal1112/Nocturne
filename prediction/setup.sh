@@ -51,11 +51,6 @@ if [ ! -f models/shape_predictor_68_face_landmarks.dat ]; then
     bzip2 -d models/shape_predictor_68_face_landmarks.dat.bz2
 fi
 
-if [ ! -f models/Phi-3-mini-4k-instruct-q4.gguf ]; then
-    echo "Downloading Phi-3 Mini model..."
-    sudo wget https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf -P models/
-fi
-
 if [ ! -f models/piper/piper ]; then
     echo "Downloading Piper TTS..."
     sudo mkdir -p models/piper
@@ -95,7 +90,7 @@ cd ../../
 mkdir -p audio
 # Generate audio alert files using Piper
 echo "Generating audio alert files with Piper..."
-piper_binary="models/piper/piper"
+piper_binary="models/piper/piper/piper"
 piper_model="models/piper/model_voice.onnx"
 
 # Normal alert
