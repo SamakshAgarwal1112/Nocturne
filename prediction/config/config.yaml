@@ -39,13 +39,3 @@ gemini:
 
 status_file_path:
   path: "/tmp/drowsiness_status.txt"
-
-audio_alerts:
-  messages:
-    normal: "Are you feeling sleepy? Please respond."
-    extreme: "You seem very drowsy. Respond to confirm you're awake."
-    no_face: "No driver detected. Please ensure you're in view."
-  volume: 1.0
-  piper_model_path: "models/piper/model_voice.onnx"
-  vosk_model_path: "models/vosk-model-small-en-us-0.15"
-  phi3_model_path: "models/Phi-3-mini-4k-instruct-q4.gguf"
