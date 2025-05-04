@@ -51,7 +51,7 @@ if [ ! -f models/shape_predictor_68_face_landmarks.dat ]; then
     bzip2 -d models/shape_predictor_68_face_landmarks.dat.bz2
 fi
 
-if [ ! -f models/piper/piper ]; then
+if [ ! -f models/piper/piper/piper ]; then
     echo "Downloading Piper TTS..."
     sudo mkdir -p models/piper
     sudo wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_arm64.tar.gz -O models/piper/piper.tar.gz
