@@ -4,6 +4,7 @@ import { useState } from "react"
 import { FiCamera, FiPower, FiVolume2, FiVolumeX } from "react-icons/fi"
 import VoiceButton from "../components/VoiceButton"
 import AudioVisualizer from "../components/AudioVisualizer"
+import Lumi from "../components/Lumi"
 
 function ListeningPage() {
   const [isMuted, setIsMuted] = useState(false)
@@ -18,9 +19,14 @@ function ListeningPage() {
         <FiCamera className="camera-icon" />
       </div>
 
-      <div className="content-area" style={{ flex: 1 }}>
-        <h2 className="question-text">Where are you going today? Do you feel tired?</h2>
-        <div className="visualizer-container" style={{ maxWidth: "800px", margin: "0 auto" }}>
+      <div className="content-area" style={{ flex: 1, position: "relative" }}>
+        {/* Center Lumi in the background */}
+        <div style={{ position: "absolute", top: "30px", left: "50%", transform: "translateX(-50%)", zIndex: 0 }}>
+        <Lumi />
+      </div>
+        
+        <h2 className="question-text" style={{ position: "relative", zIndex: 1 }}>Where are you going today? Do you feel tired?</h2>
+        <div className="visualizer-container" style={{ maxWidth: "800px", margin: "0 auto", position: "relative", zIndex: 1 }}>
           <AudioVisualizer isActive={true} />
         </div>
       </div>
