@@ -1,29 +1,27 @@
-"use client"
-
-import { useState } from "react"
-import { FiCamera, FiPower, FiVolume2, FiVolumeX } from "react-icons/fi"
-import VoiceButton from "../components/VoiceButton"
+import { FiX } from "react-icons/fi"
 import AudioVisualizer from "../components/AudioVisualizer"
 import Lumi from "../components/Lumi"
+import BatteryStatus from "../components/BatteryStatus"
+import ControlBar from "../components/ControlBar"
 
-function ListeningWithLabelPage() {
-  const [isMuted, setIsMuted] = useState(false)
-
+function ListeningWithLabelPage({ onExit }) {
   return (
     <div className="screen-container listening-screen">
       <div className="status-bar">
-        <div className="battery-indicator">
-          <div className="battery-dot"></div>
-          <span className="battery-text">50%</span>
-        </div>
-        <FiCamera className="camera-icon" />
+        <BatteryStatus />
+        <button 
+          onClick={onExit} 
+          className="p-1.5 text-xs rounded bg-red-600 hover:bg-red-500 flex items-center gap-1"
+        >
+          <FiX className="text-xs" /> Stop
+        </button>
       </div>
 
       <div className="content-area" style={{ flex: 1, position: "relative" }}>
         {/* Center Lumi in the background */}
         <div style={{ position: "absolute", top: "60px", left: "50%", transform: "translateX(-50%)", zIndex: 0 }}>
-        <Lumi />
-      </div>
+          <Lumi />
+        </div>
         
         <h2 className="question-text" style={{ position: "relative", zIndex: 1 }}>Where are you going today? Do you feel tired?</h2>
         <div className="visualizer-container" style={{ maxWidth: "800px", margin: "0 auto", position: "relative", zIndex: 1 }}>
@@ -32,22 +30,7 @@ function ListeningWithLabelPage() {
         </div>
       </div>
 
-      <div className="control-bar">
-        <button className="control-button">
-          <FiPower />
-        </button>
-
-        <VoiceButton color="blue" />
-
-        <div className="volume-controls">
-          <button className="control-button" onClick={() => setIsMuted(!isMuted)}>
-            {isMuted ? <FiVolumeX /> : <FiVolume2 />}
-          </button>
-          <button className="control-button">
-            <FiVolume2 />
-          </button>
-        </div>
-      </div>
+      <ControlBar onUserSpeaking={() => {}} />
     </div>
   )
 }
