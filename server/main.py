@@ -40,7 +40,7 @@ def stop_drowsiness():
 @app.get("/drowsiness/live_status")
 def live_status():
     def event_stream():
-        last_status = ""
+        last_status = "AWAKE"
         while True:
             try:
                 with open("/tmp/drowsiness_status.txt", "r") as f:
