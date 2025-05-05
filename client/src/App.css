@@ -280,3 +280,70 @@ body {
   padding: 16px;
   background-color: rgba(0, 0, 0, 0.5);
 }
+
+/* Add to the end of your existing App.css file */
+
+/* Lumi component styles */
+.anchor {
+  position: relative;
+  transform-origin: center;
+  transition: transform 0.3s ease-out;
+}
+
+.eye {
+  transform-origin: center;
+  transition: all 0.3s ease-out, height 0.2s ease-out;
+}
+
+.blink {
+  transition: height 0.2s ease-out;
+}
+
+@keyframes breathe {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+.anchor {
+  animation: breathe 4s infinite ease-in-out;
+}
+
+/* Add to the end of your existing App.css file */
+
+/* Lumi component styles */
+.blink {
+  height: 0.5rem !important;
+  transition: height 0.2s ease-out;
+}
+
+@keyframes breathing {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { opacity: 0.8; }
+}
+
+.anchor {
+  animation: breathing 4s infinite ease-in-out;
+}
+
+@media (max-width: 640px) {
+  .xs\:w-full {
+    width: 100%;
+  }
+  .xs\:h-full {
+    height: 100%;
+  }
+  .xs\:gap-\[4\.5rem\] {
+    gap: 4.5rem;
+  }
+  .xs\:rounded-xl {
+    border-radius: 0.75rem;
+  }
+  .xs\:h-\[7\.5rem\] {
+    height: 7.5rem;
+  }
+  .xs\:w-\[2\.5rem\] {
+    width: 2.5rem;
+  }
+}
