@@ -5,7 +5,7 @@ import { FiCamera, FiPower, FiVolume2, FiVolumeX } from "react-icons/fi"
 import VoiceButton from "../components/VoiceButton"
 import Lumi from "../components/Lumi"
 
-function SpeakingPage() {
+function SpeakingPage({text}) {
   const [isMuted, setIsMuted] = useState(false)
 
   return (
@@ -24,8 +24,7 @@ function SpeakingPage() {
         <Lumi />
       </div>
         
-        <h2 className="question-text" style={{ position: "relative", zIndex: 1 }}>Where are you going today?</h2>
-        <h2 className="question-text" style={{ position: "relative", zIndex: 1 }}>Do you feel tired?</h2>
+        <h2 className="question-text" style={{ position: "relative", zIndex: 1 }}>{`${text}`}</h2>
       </div>
 
       <div className="control-bar">

@@ -93,3 +93,16 @@ def volume_control(direction: str):
 def shutdown():
     subprocess.run(["sudo", "shutdown", "now"])
     return {"status": "shutting down"}
+
+@app.get("/gemini_response")
+def get_gemini_response():
+    def event_stream():
+        while True:
+            try:
+                with open("/tmp/gemini_response.txt", "r") as f:
+                    current_text = f.read().strip()
+                yield f"data: {current_text}\n\n"
+            except:
+                yield "data: \n\n"
+            time.sleep(1)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

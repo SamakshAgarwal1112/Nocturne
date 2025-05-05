@@ -312,6 +312,14 @@ class AudioAlerts:
             print(f"Error reading topics file: {e}")
         return None
     
+    def _save_gemini_response(self, message):
+        """Write Gemini response to /tmp/gemini_response.txt"""
+        try:
+            with open('/tmp/gemini_response.txt', 'w') as f:
+                f.write(message)
+        except Exception as e:
+            print(f"Error writing Gemini response: {e}")
+    
     def _send_to_gemini_api(self, user_speech, drowsiness_level):
         if not self.gemini_api_key:
             return {"convinced": False, "message": "API key missing.", "topic": ""}
@@ -488,26 +496,36 @@ class AudioAlerts:
             if gemini_response.get("convinced", False):
                 print("System is convinced the driver is alert.")
                 self.conversation_history = []  # Reset conversation history
-                # Play confirmation message
+                # Play confirmation message 
+                self._update_status_file("SYSTEM")
+                self._save_gemini_response("You seem alert now. Drive safely.")
                 confirm_sound = self._generate_temp_audio("You seem alert now. Drive safely.")
                 if confirm_sound:
                     self.stop_all_alerts()
                     self.gemini_channel.stop()
                     self.gemini_channel.play(confirm_sound)
+                self._save_gemini_response("")
                 return True
             else:
                 # Play custom message from Gemini
                 message = gemini_response.get("message", "I'm not convinced you're fully alert. Please continue focusing.")
                 print(f"Gemini response: {message}")
-                
+                self._update_status_file("SYSTEM")
+                self._save_gemini_response(message)
                 response_sound = self._generate_temp_audio(message)
                 if response_sound:
                     self.stop_all_alerts()
                     self.gemini_channel.play(response_sound)
+                    while self.gemini_channel.get_busy():
+                        time.sleep(0.1)
+                self._update_status_file(self.current_drowsiness_level)
+                self._save_gemini_response("")
                 return False
                 
         except Exception as e:
             print(f"Error processing voice with Gemini: {e}")
+            self._update_status_file(self.current_drowsiness_level)
+            self._save_gemini_response("")
             return False
     
     def _listen_for_response(self):
@@ -565,6 +583,7 @@ class AudioAlerts:
     def start_voice_detection(self):
         """Start voice detection in a separate thread"""
         if (self.voice_detection_thread is None or not self.voice_detection_thread.is_alive()) and not self.system_alert_active:
+            self._update_status_file("LISTENING")
             self.voice_detection_thread = threading.Thread(target=self._listen_for_response, daemon=True)
             self.voice_detection_thread.start()
     
@@ -580,6 +599,7 @@ class AudioAlerts:
             if not hasattr(self, 'normal_alert_sound'):
                 print("Error: normal_alert_sound not initialized. Cannot play normal alert.")
                 return
+            self._update_status_file("NORMAL")
             self.gemini_channel.stop()
             self.normal_alert_active = True
             self.normal_channel.play(self.normal_alert_sound, loops=0)
@@ -598,6 +618,7 @@ class AudioAlerts:
                 if not hasattr(self, 'extreme_alert_sound'):
                     print("Error: extreme_alert_sound not initialized. Cannot play extreme alert.")
                     return
+                self._update_status_file("EXTREME")
                 self.gemini_channel.stop()
                 self.extreme_alert_active = True
                 self.extreme_channel.play(self.extreme_alert_sound, loops=0)
@@ -639,6 +660,7 @@ class AudioAlerts:
         elif drowsiness_level == "NORMAL":
             self.play_normal_alert()
         else:
+            self._update_status_file("AWAKE")
             self.stop_all_alerts()
             self.conversation_history = []  # Reset conversation history when driver is AWAKE
     

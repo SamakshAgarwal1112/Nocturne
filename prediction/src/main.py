@@ -165,8 +165,8 @@ def main():
                     audio_alerts.play_no_face_alert(config['face_detection']['message'])
                     last_no_face_alert_time = current_time
         
-        with open(status_file_path, "w") as f:
-            f.write(current_drowsiness_level)
+        # with open(status_file_path, "w") as f:
+        #     f.write(current_drowsiness_level)
 
         # Update audio alerts based on current drowsiness level
         audio_alerts.update(current_drowsiness_level)

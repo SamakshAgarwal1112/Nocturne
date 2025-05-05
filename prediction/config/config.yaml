@@ -16,7 +16,7 @@ detection:
 drowsiness:
   normal:
     ear_threshold: 0.3  # EAR threshold for normal drowsiness
-    duration_threshold: 2  # Duration (seconds) for normal drowsiness alert
+    duration_threshold: 3  # Duration (seconds) for normal drowsiness alert
     message: "Hey, are you awake? Please respond."
   extreme:
     ear_threshold: 0.2  # EAR threshold for extreme drowsiness
@@ -29,7 +29,7 @@ alerts:
 
 # Face detection alerts
 face_detection:
-  alert_interval: 5.0  # Time in seconds between alerts when no face is detected
+  alert_interval: 10.0  # Time in seconds between alerts when no face is detected
   message: "No face detected! Please position yourself in front of the camera."
 
 # Add this section to your config.yaml file

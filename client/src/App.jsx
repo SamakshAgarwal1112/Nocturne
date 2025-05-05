@@ -26,14 +26,14 @@ const apiService = {
 
 // Custom hook for drowsiness monitoring
 function useDrowsinessMonitor(isDriveStarted) {
-  const [drowsinessStatus, setDrowsinessStatus] = useState("INITIAL");
+  const [drowsinessStatus, setDrowsinessStatus] = useState("AWAKE");
+  const [geminiResponse, setGeminiResponse] = useState('');
 
   // Start drowsiness detection when drive is started
   useEffect(() => {
     if (isDriveStarted) {
       const startDrowsiness = async () => {
         await apiService.startDrowsiness();
-        setDrowsinessStatus("NORMAL");
       };
       startDrowsiness();
     }
@@ -44,17 +44,22 @@ function useDrowsinessMonitor(isDriveStarted) {
     if (!isDriveStarted) return;
 
     const eventSource = new EventSource("http://localhost:8000/drowsiness/live_status");
+    const chatSource = new EventSource("http://localhost:8000/gemini_response");
 
     eventSource.onmessage = (event) => {
       setDrowsinessStatus(event.data);
     };
+    chatSource.onmessage = (event) => {
+      setGeminiResponse(event.data);
+    };
 
     return () => {
       eventSource.close();
+      chatSource.close();
     };
   }, [isDriveStarted]);
-
-  return drowsinessStatus;
+  console.log(geminiResponse)
+  return {"status": drowsinessStatus, "text": geminiResponse};
 }
 
 // Status indicator component
@@ -154,7 +159,7 @@ const MainApp = () => {
   const navigate = useNavigate();
   
   // Use custom hook for drowsiness monitoring
-  const drowsinessStatus = useDrowsinessMonitor(isDriveStarted);
+  const drowsiness_status = useDrowsinessMonitor(isDriveStarted);
 
   const handleUserSpeaking = async () => {
     // Signal to backend that user is attempting to respond
@@ -180,32 +185,38 @@ const MainApp = () => {
     }
     
     // AWAKE state - Show logo
-    if (drowsinessStatus === "AWAKE") {
+    if (drowsiness_status.status === "AWAKE") {
       return <AwakeStatus />;
     }
     
     // LISTENING state - Show Listening UI
-    if (drowsinessStatus === "LISTENING") {
+    if (drowsiness_status.status  === "LISTENING") {
       return <ListeningPage />;
     }
     
     // NORMAL or EXTREME state - Show Alert UI with ability to trigger speak action
-    if (drowsinessStatus === "NORMAL" || drowsinessStatus === "EXTREME") {
+    if (drowsiness_status.status  === "NORMAL" || drowsiness_status.status  === "EXTREME") {
       return (
         <div onClick={handleUserSpeaking} className="h-full w-full" style={{ cursor: 'pointer' }}>
           <AlertPage />
         </div>
       );
     }
+
+    if (drowsiness_status.status === "SYSTEM") {
+      return (
+        <SpeakingPage text={drowsiness_status.text}/>
+      )
+    }
     
-    return <div>Unknown state: {drowsinessStatus}</div>;
+    return <AwakeStatus/>
   };
 
   return (
     <div className="h-screen w-screen max-w-[800px] max-h-[480px] mx-auto bg-[#1a202c] text-white flex flex-col overflow-hidden">
       {/* Top status bar - always visible */}
       <div className="flex justify-between items-center p-2 bg-[#0d1424] shadow-md h-[40px]">
-        <StatusIndicator status={drowsinessStatus} />
+        <StatusIndicator status={drowsiness_status.status } />
         
         <div className="flex gap-2">
           <button 
