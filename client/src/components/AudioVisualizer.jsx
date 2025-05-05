@@ -4,31 +4,26 @@ import { useEffect, useRef, useState } from "react"
 
 function AudioVisualizer({ isActive }) {
   const [bars, setBars] = useState([])
-  const animationRef = useRef(null)
+  const intervalRef = useRef(null)
 
   useEffect(() => {
     // Initialize with random heights
     setBars(Array.from({ length: 30 }, () => Math.random() * 50 + 10))
 
     const updateBars = () => {
-      if (isActive) {
-        setBars((prev) =>
-          prev.map(() => {
-            // Create a wave-like pattern with some randomness
-            return Math.random() * 50 + 10
-          }),
-        )
-        animationRef.current = requestAnimationFrame(updateBars)
-      }
+      setBars((prev) =>
+        prev.map(() => Math.random() * 50 + 10)
+      )
     }
 
     if (isActive) {
-      animationRef.current = requestAnimationFrame(updateBars)
+      updateBars() // Run once immediately
+      intervalRef.current = setInterval(updateBars, 200) // update every 200ms
     }
 
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
       }
     }
   }, [isActive])
@@ -42,6 +37,7 @@ function AudioVisualizer({ isActive }) {
           style={{
             height: `${height}%`,
             opacity: isActive ? 1 : 0.7,
+            transition: 'height 0.2s ease-in-out',
           }}
         />
       ))}
