@@ -25,7 +25,7 @@ class AudioAlerts:
                  gemini_api_key=None,
                  gemini_api_url="https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
                  relevant_topics_file='/tmp/relevant_driver_topics.txt',
-                 piper_binary="models/piper/piper/piper",
+                 piper_binary="models/piper/piper/piper",   
                  piper_model="models/piper/model_voice.onnx",
                  vosk_model="models/vosk-model-small-en-us-0.15"):
         """
@@ -49,6 +49,8 @@ class AudioAlerts:
         self.vosk_model = os.path.join(os.path.dirname(os.path.abspath(os.getcwd())), "prediction", vosk_model)
         self.last_system_audio_time = 0
         self.is_playing_audio = False
+        self.context_file = '/tmp/driver_context.json'
+        self._initialize_context()
 
         # Initialize Vosk model for speech recognition
         self.model = Model(self.vosk_model)
@@ -98,6 +100,56 @@ class AudioAlerts:
         
         # Generate audio files using Piper binary
         self._generate_audio_files()
+
+    def _initialize_context(self):
+        """Initialize or load driver context"""
+        if not os.path.exists(self.context_file):
+            initial_context = {
+                "conversation_history": [],  # List of {role, content, timestamp}
+                "driver_details": {
+                    "name": "",
+                    "family": {},  # e.g., {"wife": "saree_request", "son": "Shyaam, board exams"}
+                    "preferences": {},  # e.g., {"music": "old melodies", "singer": "Mohammad Rafi"}
+                    "past_events": {}  # e.g., {"destination": "Mangalore", "payment": "electricity bill"}
+                }
+            }
+            with open(self.context_file, 'w') as f:
+                json.dump(initial_context, f, indent=2)
+    
+    def _load_context(self):
+        """Load context from file"""
+        try:
+            with open(self.context_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading context: {e}")
+            return {"conversation_history": [], "driver_details": {}}
+    
+    def _save_context(self, context):
+        """Save context to file"""
+        try:
+            with open(self.context_file, 'w') as f:
+                json.dump(context, f, indent=2)
+        except Exception as e:
+            print(f"Error saving context: {e}")
+    
+    def _summarize_context(self):
+        """Summarize driver details for prompt"""
+        context = self._load_context()
+        details = context["driver_details"]
+        summary = []
+        if details.get("name"):
+            summary.append(f"Driver: {details['name']}")
+        if details.get("family"):
+            family = ", ".join([f"{k}: {v}" for k, v in details["family"].items()])
+            summary.append(f"Family: {family}")
+        if details.get("preferences"):
+            prefs = ", ".join([f"{k}: {v}" for k, v in details["preferences"].items()])
+            summary.append(f"Preferences: {prefs}")
+        if details.get("past_events"):
+            events = ", ".join([f"{k}: {v}" for k, v in details["past_events"].items()])
+            summary.append(f"Recent: {events}")
+        return "; ".join(summary) if summary else "No context available"
     
     def _setup_audio_monitoring(self):
         """Setup audio monitoring for echo cancellation"""
@@ -137,6 +189,14 @@ class AudioAlerts:
                     sd.sleep(100)
         except Exception as e:
             print(f"Error in audio monitoring: {e}")
+
+    def _update_status_file(self, status):
+        """Write status to /tmp/drowsiness_status.txt"""
+        try:
+            with open('/tmp/drowsiness_status.txt', 'w') as f:
+                f.write(status)
+        except Exception as e:
+            print(f"Error writing to status file: {e}")
     
     def _generate_audio_files(self):
         """Generate audio files for alerts using Piper binary"""
@@ -253,122 +313,74 @@ class AudioAlerts:
         return None
     
     def _send_to_gemini_api(self, user_speech, drowsiness_level):
-        """
-        Send user speech and drowsiness level to Gemini API with conversation context
-        
-        Args:
-            user_speech (str): User's speech transcript
-            drowsiness_level (str): Current drowsiness level
-            
-        Returns:
-            dict: Parsed JSON response from Gemini API
-        """
         if not self.gemini_api_key:
-            print("Warning: Gemini API key not provided. Skipping API call.")
-            return {"convinced": False, "message": "API key not provided. Please set up the Gemini API key.", "topic": ""}
+            return {"convinced": False, "message": "API key missing.", "topic": ""}
         
-        # Add current interaction to conversation history
+        # Load and update context
+        context = self._load_context()
         if user_speech:
-            self.conversation_history.append({
+            context["conversation_history"].append({
                 "role": "user",
-                "content": user_speech
+                "content": user_speech,
+                "timestamp": time.time()
             })
+            # Limit history to last 2 exchanges to avoid bloat
+            context["conversation_history"] = context["conversation_history"][-2:]
         
-        # Limit conversation history to last 10 exchanges
-        if len(self.conversation_history) > 10:
-            self.conversation_history = self.conversation_history[-10:]
+        # Summarize context
+        context_summary = self._summarize_context()
+        selected_topic = self._get_random_topic() or ""
         
-        # Prepare conversation context
-        conversation_context = "\n".join(
-            [f"{msg['role'].capitalize()}: {msg['content']}" for msg in self.conversation_history]
-        )
-        
-        # Get a random topic if available
-        selected_topic = self._get_random_topic()
-        
-        # Base prompt
-        base_prompt = f"""
-        Drowsiness level: {drowsiness_level}
-        Conversation:
-        {conversation_context}
-        Driver response: "{user_speech}"
-        
-        Assess if the driver is alert. If not, respond with a short (1-2 lines), engaging message to keep them talking, using friendly, natural, and occasionally playful tones. Make sense of fragmented responses. Identify a 1-2 word topic of interest if the driver seems enthusiastic, else return empty string.
-        
-        Return JSON with:
-        - "convinced": boolean (true/false)
-        - "message": engaging response if not convinced
-        - "topic": 1-2 word topic or ""
-        
+        # Streamlined prompt
+        prompt = f"""
+        Drowsiness: {drowsiness_level}
+        Context: {context_summary}
+        Topic: {selected_topic}
+        Driver: "{user_speech}"
+
+        Assess alertness. If not alert, respond with a short (1-2 lines), engaging message to keep them talking, using a friendly, natural tone. Identify a 1-2 word topic if enthusiastic, else "". Return JSON: {{"convinced": bool, "message": str, "topic": str}}.
         Examples:
         {{"convinced": true, "message": "", "topic": ""}}
-        {{"convinced": false, "message": "Bit sleepy? What's your wildest road trip?", "topic": "road trips"}}
-        {{"convinced": false, "message": "You sound tired! Done anything fun lately?", "topic": ""}}
+        {{"convinced": false, "message": "Sleepy? What's your favorite road trip?", "topic": "road trips"}}
         """
-        
-        # Prompt with topic
-        topic_prompt = base_prompt
-        if selected_topic:
-            topic_prompt = f"""
-            {base_prompt}
-            Driver likes: {selected_topic}. Steer conversation toward this.
-            Example: {{"convinced": false, "message": "Sleepy? What's your favorite {selected_topic} moment?", "topic": "{selected_topic}"}}
-            """
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
+        print(prompt)
+        headers = {"Content-Type": "application/json"}
         data = {
-            "contents": [{
-                "parts": [{
-                    "text": topic_prompt if selected_topic else base_prompt
-                }]
-            }],
-            "generationConfig": {
-                "temperature": 0.4,
-                "topP": 0.9,
-                "topK": 40
-            }
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.4, "topP": 0.9, "topK": 40}
         }
-        
         url = f"{self.gemini_api_url}?key={self.gemini_api_key}"
         
         try:
+            self._update_status_file("SYSTEM")
             response = requests.post(url, headers=headers, json=data)
             response.raise_for_status()
-            
-            # Parse response
             resp_json = response.json()
             text_response = resp_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
             
-            # Extract JSON
-            try:
-                start_idx = text_response.find('{')
-                end_idx = text_response.rfind('}') + 1
-                
-                if start_idx >= 0 and end_idx > 0:
-                    json_str = text_response[start_idx:end_idx]
-                    result = json.loads(json_str)
-                    # Store detected topic
-                    topic = result.get("topic", "")
-                    if topic:
-                        self._store_topic(topic)
-                    # Add system response to history
-                    if not result.get("convinced", False):
-                        self.conversation_history.append({
-                            "role": "system",
-                            "content": result.get("message", "")
-                        })
-                    return result
-                else:
-                    return {"convinced": False, "message": "Could not parse Gemini API response.", "topic": ""}
-            except json.JSONDecodeError:
-                return {"convinced": False, "message": "Could not parse Gemini API response.", "topic": ""}
-                
+            # Parse JSON response
+            start_idx = text_response.find('{')
+            end_idx = text_response.rfind('}') + 1
+            if start_idx >= 0 and end_idx > 0:
+                result = json.loads(text_response[start_idx:end_idx])
+                # Update driver details with new topic
+                topic = result.get("topic", "")
+                if topic:
+                    context["driver_details"]["preferences"][topic] = topic
+                    self._store_topic(topic)
+                # Save system response
+                if not result.get("convinced", False):
+                    context["conversation_history"].append({
+                        "role": "system",
+                        "content": result.get("message", ""),
+                        "timestamp": time.time()
+                    })
+                self._save_context(context)
+                return result
+            return {"convinced": False, "message": "Parse error.", "topic": ""}
         except requests.exceptions.RequestException as e:
-            print(f"Error calling Gemini API: {e}")
-            return {"convinced": False, "message": "Error communicating with Gemini API.", "topic": ""}
+            print(f"Gemini API error: {e}")
+            return {"convinced": False, "message": "Please restart.", "topic": ""}
     
     def _is_system_audio_echo(self, text):
         """
@@ -475,11 +487,12 @@ class AudioAlerts:
             # Process response
             if gemini_response.get("convinced", False):
                 print("System is convinced the driver is alert.")
-                self.stop_all_alerts()
                 self.conversation_history = []  # Reset conversation history
                 # Play confirmation message
                 confirm_sound = self._generate_temp_audio("You seem alert now. Drive safely.")
                 if confirm_sound:
+                    self.stop_all_alerts()
+                    self.gemini_channel.stop()
                     self.gemini_channel.play(confirm_sound)
                 return True
             else:
@@ -511,6 +524,7 @@ class AudioAlerts:
                        self.no_face_channel.get_busy()):
                     time.sleep(0.1)
                     if self.stop_voice_detection:
+                        self._update_status_file(self.current_drowsiness_level)
                         return
                 
                 self.is_playing_audio = False
@@ -526,6 +540,7 @@ class AudioAlerts:
                 self.gemini_channel.stop()
                 self.no_face_channel.stop()
                 
+                self._update_status_file("LISTENING")
                 # Capture audio using sounddevice
                 print("Listening for driver response...")
                 audio_data = sd.rec(
@@ -561,10 +576,11 @@ class AudioAlerts:
     
     def play_normal_alert(self):
         """Start playing normal alert"""
-        if not self.normal_alert_active and not self.extreme_alert_active and not self.system_alert_active:
+        if not self.normal_alert_active and not self.extreme_alert_active and not self.system_alert_active and not self.gemini_channel.get_busy():
             if not hasattr(self, 'normal_alert_sound'):
                 print("Error: normal_alert_sound not initialized. Cannot play normal alert.")
                 return
+            self.gemini_channel.stop()
             self.normal_alert_active = True
             self.normal_channel.play(self.normal_alert_sound, loops=0)
             self.is_playing_audio = True
@@ -578,10 +594,11 @@ class AudioAlerts:
                 self.normal_channel.stop()
                 self.normal_alert_active = False
             
-            if not self.extreme_alert_active and not self.system_alert_active:
+            if not self.extreme_alert_active and not self.system_alert_active and not self.gemini_channel.get_busy():
                 if not hasattr(self, 'extreme_alert_sound'):
                     print("Error: extreme_alert_sound not initialized. Cannot play extreme alert.")
                     return
+                self.gemini_channel.stop()
                 self.extreme_alert_active = True
                 self.extreme_channel.play(self.extreme_alert_sound, loops=0)
                 self.is_playing_audio = True

@@ -20,10 +20,12 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    console.log("started")
     const startDrowsiness = async () => {
       await fetch("http://localhost:8000/drowsiness/start", { method: "POST" });
     };
     startDrowsiness();
+    console.log("ended")
   }, []);
 
   useEffect(() => {

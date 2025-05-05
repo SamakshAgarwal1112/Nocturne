@@ -10,17 +10,17 @@ camera:
 detection:
   face_confidence: 0.5  # Minimum confidence for face detection (0.0 to 1.0)
   eye_aspect_ratio_threshold: 0.3  # Threshold for eye aspect ratio (higher is more sensitive)
-  consecutive_frames_threshold: 20  # Number of consecutive frames to confirm drowsiness
+  consecutive_frames_threshold: 30  # Number of consecutive frames to confirm drowsiness
 
 # Drowsiness thresholds
 drowsiness:
   normal:
     ear_threshold: 0.3  # EAR threshold for normal drowsiness
-    duration_threshold: 1.5  # Duration (seconds) for normal drowsiness alert
+    duration_threshold: 2  # Duration (seconds) for normal drowsiness alert
     message: "Hey, are you awake? Please respond."
   extreme:
-    ear_threshold: 0.25  # EAR threshold for extreme drowsiness
-    duration_threshold: 1.5  # Duration (seconds) for extreme drowsiness alert
+    ear_threshold: 0.2  # EAR threshold for extreme drowsiness
+    duration_threshold: 2  # Duration (seconds) for extreme drowsiness alert
     message: "Warning! You appear to be falling asleep! Wake up now!"
 
 # Alert settings
