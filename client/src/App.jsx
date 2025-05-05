@@ -33,7 +33,7 @@ const apiService = {
 };
 
 function useDrowsinessMonitor(isDriveStarted) {
-  const [drowsinessStatus, setDrowsinessStatus] = useState("NORMAL");
+  const [drowsinessStatus, setDrowsinessStatus] = useState("AWAKE");
   const [geminiResponse, setGeminiResponse] = useState("");
 
   // Start drowsiness detection when drive is started
