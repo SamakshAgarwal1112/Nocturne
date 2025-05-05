@@ -44,24 +44,34 @@ body {
 /* Screen container */
 .screen-container {
   position: relative;
-  width: 100%;  /* Changed from max-width: 360px */
-  min-height: 100vh;  /* Use full viewport height */
-  border-radius: 0;  /* Remove border radius */
+  width: 100%;
+  min-height: 100vh;
+  border-radius: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: none;  /* Remove box shadow */
+  box-shadow: none;
+  background-position: center;
+  background-size: 200% 200%;
+  z-index: 0; /* Add this to ensure it's behind the status bars */
 }
 
-.speaking-screen,
+.speaking-screen {
+  background: radial-gradient(circle at center, #1a3a6c 0%, #0a1a3a 70%);
+}
+
 .listening-screen {
-  background-color: #0a1a3a;
+  background: radial-gradient(circle at center, #1a3a6c 0%, #0a1a3a 70%);
 }
 
 .alert-screen {
   background-color: #7a1a1a;
+  background: radial-gradient(circle at center, #9a2a2a 0%, #7a1a1a 70%);
 }
 
+.default-screen {
+  background: radial-gradient(circle at center, #263c5a 0%, #1a202c 70%);
+}
 /* Screen header */
 .screen-header {
   position: absolute;
@@ -346,4 +356,98 @@ body {
   .xs\:w-\[2\.5rem\] {
     width: 2.5rem;
   }
+}
+
+/* Battery status styles */
+.battery-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin: 10px;
+}
+
+.battery-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+.battery-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Control bar styles */
+.control-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: rgba(13, 20, 36, 0.9);
+  backdrop-filter: blur(8px);
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 100;
+  height: 70px;
+}
+
+.power-button {
+  background-color: rgba(59, 130, 246, 0.2);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.power-button:hover {
+  background-color: rgba(59, 130, 246, 0.4);
+}
+
+.volume-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.volume-adjust-btn {
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.volume-slider {
+  width: 100px;
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.volume-level {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background-color: #3b82f6;
+  transition: width 0.2s;
 }
