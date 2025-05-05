@@ -7,8 +7,8 @@ function AudioVisualizer({ isActive }) {
   const intervalRef = useRef(null)
 
   useEffect(() => {
-    // Initialize with random heights
-    setBars(Array.from({ length: 30 }, () => Math.random() * 50 + 10))
+    // Initialize with random heights - increased number of bars for wider visualizer
+    setBars(Array.from({ length: 40 }, () => Math.random() * 50 + 10))
 
     const updateBars = () => {
       setBars((prev) =>
@@ -38,6 +38,9 @@ function AudioVisualizer({ isActive }) {
             height: `${height}%`,
             opacity: isActive ? 1 : 0.7,
             transition: 'height 0.2s ease-in-out',
+            width: '4px', // Increased bar width
+            marginLeft: '1px', // Added spacing between bars
+            marginRight: '1px', // Added spacing between bars
           }}
         />
       ))}

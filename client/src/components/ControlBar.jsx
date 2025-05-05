@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { FiPower, FiVolume2, FiVolumeX, FiVolume1, FiVolume } from "react-icons/fi";
+import { FiPower, FiVolume2, FiVolume } from "react-icons/fi";
 
 function ControlBar({ onUserSpeaking }) {
   const [volume, setVolume] = useState(50);
-  const [isMuted, setIsMuted] = useState(false);
   
   const adjustVolume = async (direction) => {
     // Call API to adjust actual system volume
@@ -20,11 +19,6 @@ function ControlBar({ onUserSpeaking }) {
       console.error("Failed to adjust volume:", error);
     }
   };
-  
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    // You could also implement actual muting via API here
-  };
 
   return (
     <div className="control-bar">
@@ -36,13 +30,6 @@ function ControlBar({ onUserSpeaking }) {
       </button>
       
       <div className="volume-controls">
-        <button 
-          className="control-button" 
-          onClick={toggleMute}
-        >
-          {isMuted ? <FiVolumeX /> : <FiVolume2 />}
-        </button>
-        
         <div className="volume-slider-container">
           <button 
             className="volume-adjust-btn" 

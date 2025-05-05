@@ -2,26 +2,48 @@ import { useState, useEffect } from 'react';
 
 function BatteryStatus() {
   const [batteryLevel, setBatteryLevel] = useState(50);
+  const [isCharging, setIsCharging] = useState(false);
   
-  // In a real app, you could use the Battery Status API or fetch from backend
   useEffect(() => {
-    // Mock battery level change for demo purposes
-    const interval = setInterval(() => {
-      setBatteryLevel(prev => {
-        const newLevel = prev - 1;
-        return newLevel < 10 ? 50 : newLevel;
-      });
-    }, 60000); // Update every minute
+    // Function to fetch battery status from backend
+    const fetchBatteryStatus = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/system/battery');
+        if (response.ok) {
+          const data = await response.json();
+          setBatteryLevel(data.level);
+          setIsCharging(data.charging);
+        }
+      } catch (error) {
+        console.error('Failed to fetch battery status:', error);
+      }
+    };
+    
+    // Initial fetch
+    fetchBatteryStatus();
+    
+    // Fetch every 30 seconds
+    const interval = setInterval(fetchBatteryStatus, 30000);
     
     return () => clearInterval(interval);
   }, []);
   
+  // Determine color based on battery level and charging state
+  const getBatteryColor = () => {
+    if (isCharging) return '#4ade80'; // Green when charging
+    if (batteryLevel <= 15) return '#ef4444'; // Red when critical
+    if (batteryLevel <= 30) return '#f97316'; // Orange when low
+    return '#4ade80'; // Green otherwise
+  };
+  
   return (
     <div className="battery-indicator">
       <div className="battery-dot" style={{
-        backgroundColor: batteryLevel > 20 ? '#4ade80' : '#ef4444'
+        backgroundColor: getBatteryColor()
       }}></div>
-      <span className="battery-text">{batteryLevel}%</span>
+      <span className="battery-text">
+        {batteryLevel}%{isCharging ? ' ⚡' : ''}
+      </span>
     </div>
   );
 }
