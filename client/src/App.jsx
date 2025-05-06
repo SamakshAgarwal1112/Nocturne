@@ -197,11 +197,11 @@ const MainApp = () => {
   return (
     <div className="h-screen w-screen max-w-[800px] max-h-[480px] mx-auto bg-[#1a202c] text-white flex flex-col overflow-hidden">
       {/* Top status bar */}
-      <div className="flex justify-right items-center p-2 bg-[#0d1424] shadow-md h-[60px] z-10 relative">
+      <div className="flex justify-center items-center p-2 bg-[#0d1424] shadow-md h-[64px] z-10 relative">
         {/* <BatteryStatus /> */}
-        <div className="w-174">
+        {/* <div className="w-174">
 
-        </div>
+        </div> */}
         {isDriveStarted && (
           <button
             onClick={exitDrive}

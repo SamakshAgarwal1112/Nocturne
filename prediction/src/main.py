@@ -186,15 +186,15 @@ def main():
                     (0, 255, 0) if face_detected else (0, 0, 255), 2)
         
         # Display frame
-        cv2.imshow("Driver Drowsiness Detection", frame)
+        # cv2.imshow("Driver Drowsiness Detection", frame)
         
         # Check for quit command
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        # if cv2.waitKey(1) & 0xFF == ord('q'):
+        #     break
     
     # Clean up
     camera.release()
-    cv2.destroyAllWindows()
+    # cv2.destroyAllWindows()
     audio_alerts.cleanup()
     print("Driver Drowsiness Detection System Stopped")
 
