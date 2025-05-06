@@ -5,7 +5,7 @@ import {
   Route,
   useNavigate,
 } from "react-router-dom";
-import { FiPower } from "react-icons/fi";
+import { FiPower, FiCamera } from "react-icons/fi";
 
 // Page components
 import SpeakingPage from "./pages/SpeakingPage.jsx";
@@ -132,6 +132,8 @@ const AwakeStatus = () => (
 
 const MainApp = () => {
   const [isDriveStarted, setIsDriveStarted] = useState(false);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraSrc, setCameraSrc] = useState("");
   const navigate = useNavigate();
   
   // Use custom hook for drowsiness monitoring
@@ -150,6 +152,13 @@ const MainApp = () => {
       console.error("Failed to stop drowsiness detection:", err)
     );
     setIsDriveStarted(false);
+  };
+
+  const toggleCamera = async () => {
+    const newState = !cameraOn;
+    setCameraOn(newState);
+    await apiService.toggleCamera(newState);
+    setCameraSrc(newState ? "http://localhost:8000/video" : "");
   };
 
   /**
@@ -188,15 +197,25 @@ const MainApp = () => {
   return (
     <div className="h-screen w-screen max-w-[800px] max-h-[480px] mx-auto bg-[#1a202c] text-white flex flex-col overflow-hidden">
       {/* Top status bar */}
-      <div className="flex justify-between items-center p-2 bg-[#0d1424] shadow-md h-[40px] z-10 relative">
-        <BatteryStatus />
+      <div className="flex justify-right items-center p-2 bg-[#0d1424] shadow-md h-[60px] z-10 relative">
+        {/* <BatteryStatus /> */}
+        <div className="w-174">
 
+        </div>
         {isDriveStarted && (
           <button
             onClick={exitDrive}
-            className="w-12 px-6 py-3 text-base rounded-lg bg-red-600 hover:bg-red-500 text-white shadow-md transition-all duration-200 flex items-center justify-center gap-2"
+            className="w-16 px-6 py-3 text-lg rounded-lg bg-red-600 hover:bg-red-500 text-white shadow-md transition-all duration-200 flex items-center justify-center gap-2"
           >
             Stop
+          </button>
+        )}
+        {!isDriveStarted && (
+          <button
+            onClick={exitDrive}
+            className="w-10 px-6 py- text-lg rounded-lg bg-red-600 hover:bg-red-500 text-white shadow-md transition-all duration-200 flex items-center justify-center gap-2"
+          >
+            <FiCamera/>
           </button>
         )}
       </div>
